@@ -1,24 +1,23 @@
 export interface MongoConnection {
   id: string;
   name: string;
+  description?: string;  // Add description field
   host: string;
   port: string;
-  database?: string;
-  username?: string;
-  password?: string;
-  options: ConnectionOptions;
-  uri?: string;
-  status: 'disconnected' | 'connected' | 'error';
+  database: string;
+  username: string;
+  password: string;
+  uri: string;
+  status: 'connected' | 'disconnected' | 'error';
   error?: string;
-}
-
-export interface ConnectionOptions {
-  authSource?: string;
-  directConnection?: boolean;
-  ssl?: boolean;
-  tls?: boolean;
-  tlsAllowInvalidCertificates?: boolean;
-  retryWrites?: boolean;
+  options: {
+    authSource: string;
+    directConnection: boolean;
+    ssl: boolean;
+    tls: boolean;
+    tlsAllowInvalidCertificates: boolean;
+    retryWrites: boolean;
+  };
 }
 
 export interface MongoCommand {

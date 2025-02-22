@@ -109,3 +109,45 @@ export async function DELETE(request: Request) {
     if (client) await client.close();
   }
 }
+
+export async function PUT(request: Request) {
+  let client;
+  try {
+    const connection = await request.json();
+    
+    if (!connection.id) {
+      return NextResponse.json(
+        { success: false, error: 'Connection ID is required' },
+        { status: 400 }
+      );
+    }
+
+    client = await getMongoClient();
+    const db = client.db(DB_NAME);
+    
+    // Remove runtime fields before updating
+    const { _id, status, error, ...connectionToUpdate } = connection;
+    
+    const result = await db.collection(COLLECTION_NAME).updateOne(
+      { id: connection.id },
+      { $set: connectionToUpdate }
+    );
+
+    if (result.matchedCount === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Connection not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Failed to update connection:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update connection' },
+      { status: 500 }
+    );
+  } finally {
+    if (client) await client.close();
+  }
+}
