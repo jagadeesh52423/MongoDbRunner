@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
+import * as ContextMenu from '@radix-ui/react-context-menu';
 import { MongoConnection } from '@/types/connection';
 
 interface ConnectionManagerProps {
@@ -32,6 +33,10 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
   });
   const [nameError, setNameError] = useState<string>('');
 
+  useEffect(() => {
+    loadStoredConnections();
+  }, []);
+
   const validateName = (name: string) => {
     if (!name) return 'Name is required';
     if (connections.some(conn => conn.name === name)) {
@@ -40,8 +45,8 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
     return '';
   };
 
-  const generateUri = () => {
-    const { username, password, host, port, database, options } = newConnection;
+  const generateUri = (connection: MongoConnection) => {
+    const { username, password, host, port, database, options } = connection;
     let uri = 'mongodb://';
     
     if (username && password) {
@@ -82,6 +87,66 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
     setConnections(connections.filter(conn => conn.id !== id));
   };
 
+  const loadStoredConnections = async () => {
+    try {
+      const response = await fetch('/api/stored-connections');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const result = await response.json();
+      
+      if (result.success && Array.isArray(result.data)) {
+        setConnections(result.data.map((conn: MongoConnection) => ({
+          ...conn,
+          status: 'disconnected'
+        })));
+      } else {
+        console.error('Invalid response format:', result);
+      }
+    } catch (error) {
+      console.error('Failed to load connections:', error);
+    }
+  };
+
+  const saveConnection = async (connection: MongoConnection) => {
+    try {
+      const response = await fetch('/api/stored-connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(connection)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to save connection');
+      }
+    } catch (error) {
+      console.error('Failed to save connection:', error);
+      throw error;
+    }
+  };
+
+  const connectToDatabase = async (connection: MongoConnection) => {
+    const uri = connection.uri || generateUri(connection);
+    const isValid = await testConnection(uri);
+    
+    const updatedConnection = {
+      ...connection,
+      status: isValid ? 'connected' : 'error',
+      error: isValid ? undefined : 'Failed to connect'
+    };
+
+    setConnections(prev => prev.map(conn => 
+      conn.id === connection.id ? updatedConnection : conn
+    ));
+
+    if (isValid) onSelect(updatedConnection);
+  };
+
   const addConnection = async () => {
     const nameValidationError = validateName(newConnection.name);
     if (nameValidationError) {
@@ -89,20 +154,16 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
       return;
     }
 
-    const uri = newConnection.uri || generateUri();
-    const isValid = await testConnection(uri);
-    
-    const connection: MongoConnection = {
+    const connection = {
       id: Date.now().toString(),
       ...newConnection,
-      uri,
-      status: isValid ? 'connected' : 'error',
-      error: isValid ? undefined : 'Failed to connect',
+      uri: newConnection.uri || generateUri(newConnection),
+      status: 'disconnected',
       options: { ...newConnection.options }
     };
 
+    await saveConnection(connection);
     setConnections(prev => [...prev, connection]);
-    if (isValid) onSelect(connection);
     setNewConnection({ ...newConnection, name: '', uri: '' });
   };
 
@@ -247,29 +308,36 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
       
       <div className="space-y-2">
         {connections.map(conn => (
-          <div 
-            key={conn.id} 
-            className="p-2 border rounded hover:bg-black/5 flex items-center"
-          >
-            <span 
-              className="flex-1 cursor-pointer" 
-              onClick={() => onSelect(conn)}
-            >
-              {conn.name}
-            </span>
-            <span className={`text-xs px-2 py-0.5 rounded mr-2 ${
-              conn.status === 'connected' ? 'bg-green-500' : 
-              conn.status === 'error' ? 'bg-red-500' : 'bg-gray-500'
-            } text-white`}>
-              {conn.status}
-            </span>
-            <button
-              onClick={() => deleteConnection(conn.id)}
-              className="text-red-500 hover:text-red-700 px-2"
-            >
-              ×
-            </button>
-          </div>
+          <ContextMenu.Root key={conn.id}>
+            <ContextMenu.Trigger>
+              <div className="p-2 border rounded hover:bg-black/5 flex items-center">
+                <span className="flex-1">{conn.name}</span>
+                <span className={`text-xs px-2 py-0.5 rounded mr-2 ${
+                  conn.status === 'connected' ? 'bg-green-500' : 
+                  conn.status === 'error' ? 'bg-red-500' : 'bg-gray-500'
+                } text-white`}>
+                  {conn.status}
+                </span>
+              </div>
+            </ContextMenu.Trigger>
+            
+            <ContextMenu.Portal>
+              <ContextMenu.Content className="min-w-[160px] bg-background rounded-md shadow-lg border p-1">
+                <ContextMenu.Item 
+                  className="px-2 py-1 rounded hover:bg-black/5 cursor-pointer"
+                  onClick={() => connectToDatabase(conn)}
+                >
+                  Connect
+                </ContextMenu.Item>
+                <ContextMenu.Item 
+                  className="px-2 py-1 rounded hover:bg-black/5 cursor-pointer text-red-500"
+                  onClick={() => deleteConnection(conn.id)}
+                >
+                  Delete
+                </ContextMenu.Item>
+              </ContextMenu.Content>
+            </ContextMenu.Portal>
+          </ContextMenu.Root>
         ))}
       </div>
     </div>
