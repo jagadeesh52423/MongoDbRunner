@@ -1,24 +1,74 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+# MongoDB Runner
+
+A powerful web-based MongoDB query runner and connection manager built with Next.js.
+
+## Features
+
+- Manage multiple MongoDB connections
+- Execute MongoDB queries and commands with syntax highlighting
+- Real-time query results
+- Connection persistence
+- Dark mode support
+- Modern UI with Radix UI components
+
 ## Getting Started
 
-First, run the development server:
+1. Clone the repository
+2. Install dependencies:
+```bash
+npm install
+# or
+yarn install
+```
 
+3. Set up your environment variables:
+```env
+MONGODB_URI=your_default_mongodb_uri
+```
+
+4. Run the development server:
 ```bash
 npm run dev
 # or
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+5. Open [http://localhost:3000](http://localhost:3000) to start using the application
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Add a new MongoDB connection using the "New" button in the Connections panel
+2. Write your MongoDB queries in the query editor
+3. Click "Execute" to run the query
+4. View results in the results panel
+
+## Query Examples
+
+```javascript
+// List all databases
+db.adminCommand({ listDatabases: 1 })
+
+// List collections in current database
+db.getCollectionNames()
+
+// Find documents
+db.collection('users').find({ age: { $gt: 21 } })
+```
+
+## Tech Stack
+
+- Next.js 13+ with App Router
+- TypeScript
+- Tailwind CSS
+- Monaco Editor
+- MongoDB Node.js Driver
+- Radix UI Components
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Learn More
 
