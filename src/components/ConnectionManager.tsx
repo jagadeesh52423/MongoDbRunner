@@ -181,41 +181,63 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
             <Dialog.Overlay className="fixed inset-0 bg-black/50" />
             <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background p-6 rounded-lg w-[600px] max-h-[80vh] overflow-y-auto">
               <Dialog.Title className="text-lg font-bold mb-4">Add Connection</Dialog.Title>
-              <Tabs.Root defaultValue="basic">
-                <Tabs.List className="flex border-b mb-4">
-                  <Tabs.Trigger value="basic" className="px-4 py-2 border-b-2 border-transparent data-[state=active]:border-foreground">
-                    Basic
-                  </Tabs.Trigger>
-                  <Tabs.Trigger value="advanced" className="px-4 py-2 border-b-2 border-transparent data-[state=active]:border-foreground">
-                    Advanced
-                  </Tabs.Trigger>
-                  <Tabs.Trigger value="uri" className="px-4 py-2 border-b-2 border-transparent data-[state=active]:border-foreground">
-                    URI
-                  </Tabs.Trigger>
-                </Tabs.List>
+              
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                addConnection();
+              }}>
+                {/* Common Fields */}
+                <div className="space-y-4 mb-6">
+                  <div>
+                    <label className="block mb-1">Name</label>
+                    <input
+                      className={`w-full p-2 border rounded ${nameError ? 'border-red-500' : ''}`}
+                      value={newConnection.name}
+                      onChange={(e) => {
+                        setNameError('');
+                        setNewConnection(prev => ({ ...prev, name: e.target.value }));
+                      }}
+                      required
+                    />
+                    {nameError && <p className="text-red-500 text-sm mt-1">{nameError}</p>}
+                  </div>
+                </div>
 
-                <form onSubmit={(e) => { e.preventDefault(); addConnection(); }}>
-                  <Tabs.Content value="basic" className="space-y-4">
-                    <div>
-                      <label className="block mb-1">Name</label>
-                      <input
-                        className={`w-full p-2 border rounded ${nameError ? 'border-red-500' : ''}`}
-                        value={newConnection.name}
-                        onChange={e => {
-                          setNameError('');
-                          setNewConnection(prev => ({ ...prev, name: e.target.value }));
-                        }}
-                        required
-                      />
-                      {nameError && <p className="text-red-500 text-sm mt-1">{nameError}</p>}
-                    </div>
+                {/* Connection Configuration */}
+                <Tabs.Root defaultValue="standard" className="mt-4">
+                  <Tabs.List className="flex border-b mb-4">
+                    <Tabs.Trigger
+                      value="standard"
+                      className="px-4 py-2 border-b-2 border-transparent data-[state=active]:border-foreground"
+                    >
+                      Standard
+                    </Tabs.Trigger>
+                    <Tabs.Trigger
+                      value="uri"
+                      className="px-4 py-2 border-b-2 border-transparent data-[state=active]:border-foreground"
+                    >
+                      URI
+                    </Tabs.Trigger>
+                    <Tabs.Trigger
+                      value="advanced"
+                      className="px-4 py-2 border-b-2 border-transparent data-[state=active]:border-foreground"
+                    >
+                      Advanced
+                    </Tabs.Trigger>
+                  </Tabs.List>
+
+                  <Tabs.Content value="standard" className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block mb-1">Host</label>
                         <input
                           className="w-full p-2 border rounded"
                           value={newConnection.host}
-                          onChange={e => setNewConnection(prev => ({ ...prev, host: e.target.value }))}
+                          onChange={(e) => setNewConnection(prev => ({
+                            ...prev,
+                            host: e.target.value,
+                            uri: '' // Clear URI when using standard connection
+                          }))}
                           required
                         />
                       </div>
@@ -224,29 +246,26 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
                         <input
                           className="w-full p-2 border rounded"
                           value={newConnection.port}
-                          onChange={e => setNewConnection(prev => ({ ...prev, port: e.target.value }))}
+                          onChange={(e) => setNewConnection(prev => ({
+                            ...prev,
+                            port: e.target.value,
+                            uri: '' // Clear URI when using standard connection
+                          }))}
                           required
                         />
                       </div>
                     </div>
-                    <div>
-                      <label className="block mb-1">Database</label>
-                      <input
-                        className="w-full p-2 border rounded"
-                        value={newConnection.database}
-                        onChange={e => setNewConnection(prev => ({ ...prev, database: e.target.value }))}
-                      />
-                    </div>
-                  </Tabs.Content>
-
-                  <Tabs.Content value="advanced" className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block mb-1">Username</label>
                         <input
                           className="w-full p-2 border rounded"
                           value={newConnection.username}
-                          onChange={e => setNewConnection(prev => ({ ...prev, username: e.target.value }))}
+                          onChange={(e) => setNewConnection(prev => ({
+                            ...prev,
+                            username: e.target.value,
+                            uri: ''
+                          }))}
                         />
                       </div>
                       <div>
@@ -255,10 +274,50 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
                           type="password"
                           className="w-full p-2 border rounded"
                           value={newConnection.password}
-                          onChange={e => setNewConnection(prev => ({ ...prev, password: e.target.value }))}
+                          onChange={(e) => setNewConnection(prev => ({
+                            ...prev,
+                            password: e.target.value,
+                            uri: ''
+                          }))}
                         />
                       </div>
                     </div>
+                    <div>
+                      <label className="block mb-1">Database</label>
+                      <input
+                        className="w-full p-2 border rounded"
+                        value={newConnection.database}
+                        onChange={(e) => setNewConnection(prev => ({
+                          ...prev,
+                          database: e.target.value,
+                          uri: ''
+                        }))}
+                      />
+                    </div>
+                  </Tabs.Content>
+
+                  <Tabs.Content value="uri" className="space-y-4">
+                    <div>
+                      <label className="block mb-1">Connection URI</label>
+                      <input
+                        className="w-full p-2 border rounded"
+                        value={newConnection.uri}
+                        onChange={(e) => setNewConnection(prev => ({
+                          ...prev,
+                          uri: e.target.value,
+                          // Clear standard fields when using URI
+                          host: '',
+                          port: '',
+                          username: '',
+                          password: '',
+                          database: ''
+                        }))}
+                        placeholder="mongodb://username:password@host:port/database"
+                      />
+                    </div>
+                  </Tabs.Content>
+
+                  <Tabs.Content value="advanced" className="space-y-4">
                     <div className="space-y-2">
                       <label className="block mb-1">Options</label>
                       <div className="grid grid-cols-2 gap-2">
@@ -266,8 +325,8 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
                           <label key={key} className="flex items-center gap-2">
                             <input
                               type="checkbox"
-                              checked={value as boolean}
-                              onChange={e => setNewConnection(prev => ({
+                              checked={value}
+                              onChange={(e) => setNewConnection(prev => ({
                                 ...prev,
                                 options: {
                                   ...prev.options,
@@ -281,26 +340,17 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
                       </div>
                     </div>
                   </Tabs.Content>
+                </Tabs.Root>
 
-                  <Tabs.Content value="uri" className="space-y-4">
-                    <div>
-                      <label className="block mb-1">Connection URI</label>
-                      <input
-                        className="w-full p-2 border rounded"
-                        value={newConnection.uri}
-                        onChange={e => setNewConnection(prev => ({ ...prev, uri: e.target.value }))}
-                        placeholder="mongodb://username:password@host:port/database"
-                      />
-                    </div>
-                  </Tabs.Content>
-
-                  <div className="mt-4">
-                    <button type="submit" className="w-full bg-foreground text-background p-2 rounded">
-                      Add Connection
-                    </button>
-                  </div>
-                </form>
-              </Tabs.Root>
+                <div className="mt-6">
+                  <button
+                    type="submit"
+                    className="w-full bg-foreground text-background p-2 rounded"
+                  >
+                    Add Connection
+                  </button>
+                </div>
+              </form>
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>
