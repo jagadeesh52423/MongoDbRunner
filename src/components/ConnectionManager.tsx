@@ -13,8 +13,7 @@ interface FormData extends Omit<MongoConnection, 'id'> {
 
 // Add utility function to convert FormData to MongoConnection
 const createConnection = (form: FormData): MongoConnection => {
-  // Ensure we have a unique ID by using a combination of timestamp and random string
-  const uniqueId = form.id || `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  const uniqueId = form.id || `${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${form.name.replace(/\s+/g, '-').toLowerCase()}`;
   
   return {
     ...form,
@@ -248,6 +247,13 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
       status: 'disconnected',
       options: { ...formData.options }
     });
+    
+    // Ensure the ID is unique among existing connections
+    const isIdDuplicate = connections.some(conn => conn.id === connection.id);
+    if (isIdDuplicate) {
+      // Generate a new ID if there's a duplicate
+      connection.id = `${connection.id}-${Math.random().toString(36).substring(2, 9)}`;
+    }
   
     await saveConnection(connection);
     
@@ -579,8 +585,8 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
       </Dialog.Root>
 
       <div className="space-y-2">
-        {connections.map((conn) => (
-          <ContextMenu.Root key={`conn-${conn.id}`}>
+        {connections.map((conn, index) => (
+          <ContextMenu.Root key={`conn-${conn.id}-${index}`}>
             <ContextMenu.Trigger>
               <div className="p-2 border rounded hover:bg-black/5 flex items-center">
                 <span className="flex-1">{conn.name}</span>
