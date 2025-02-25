@@ -5,12 +5,28 @@ import * as Dialog from '@radix-ui/react-dialog';
 import * as Tabs from '@radix-ui/react-tabs';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import { MongoConnection } from '@/types/connection';
+import { connectionService } from '@/services/connectionService';
 
-const defaultConnection: Omit<MongoConnection, 'id'> = {
+interface FormData extends Omit<MongoConnection, 'id'> {
+  id?: string;  // Make id optional for form data
+}
+
+// Add utility function to convert FormData to MongoConnection
+const createConnection = (form: FormData): MongoConnection => {
+  // Ensure we have a unique ID by using a combination of timestamp and random string
+  const uniqueId = form.id || `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  
+  return {
+    ...form,
+    id: uniqueId
+  };
+};
+
+const defaultConnection: FormData = {
   name: '',
-  description: '',  // Add default description
-  host: 'localhost',
-  port: '27017',
+  description: '',
+  host: '',
+  port: '',
   database: '',
   username: '',
   password: '',
@@ -27,15 +43,15 @@ const defaultConnection: Omit<MongoConnection, 'id'> = {
 };
 
 interface ConnectionManagerProps {
-  onSelect: (connection: MongoConnection) => void;
+  onSelect: (connection: MongoConnection | null) => void;  // Updated to allow null
   connections: MongoConnection[];
-  setConnections: (connections: MongoConnection[]) => void;
+  setConnections: React.Dispatch<React.SetStateAction<MongoConnection[]>>;  // Updated type
 }
 
 export function ConnectionManager({ onSelect, connections, setConnections }: ConnectionManagerProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isUpdate, setIsUpdate] = useState(false);
-  const [formData, setFormData] = useState(defaultConnection);
+  const [formData, setFormData] = useState<FormData>(defaultConnection);
   const [nameError, setNameError] = useState('');
 
   useEffect(() => {
@@ -88,8 +104,30 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
     }
   };
 
-  const deleteConnection = (id: string) => {
-    setConnections(connections.filter(conn => conn.id !== id));
+  const deleteConnection = async (connection: MongoConnection) => {
+    try {
+      // First disconnect if connected
+      if (connection.status === 'connected') {
+        await disconnectDatabase(connection);
+      }
+      
+      // Make API call to delete from storage
+      const response = await fetch(`/api/stored-connections/delete?name=${encodeURIComponent(connection.name)}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        console.error('Failed to delete connection:', data.error || response.statusText);
+        return;
+      }
+      
+      // Remove from state only after successful deletion
+      setConnections(connections.filter(conn => conn.id !== connection.id));
+      console.log(`Connection ${connection.name} deleted successfully`);
+    } catch (error) {
+      console.error('Error deleting connection:', error);
+    }
   };
 
   const loadStoredConnections = async () => {
@@ -98,15 +136,25 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const result = await response.json();
       
-      if (result.success && Array.isArray(result.data)) {
-        setConnections(result.data.map((conn: MongoConnection) => ({
-          ...conn,
-          status: 'disconnected'
-        })));
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        const mappedConnections: MongoConnection[] = data.map(conn => ({
+          id: conn.id || Date.now().toString(),
+          name: conn.name || '',
+          description: conn.description || '',
+          host: conn.config?.host || 'localhost',
+          port: (conn.config?.port || '27017').toString(),
+          database: conn.config?.database || '',
+          username: conn.config?.username || '',
+          password: conn.config?.password || '',
+          uri: conn.uri || '',
+          status: 'disconnected' as const,
+          options: conn.config?.options || defaultConnection.options
+        }));
+        setConnections(mappedConnections);
       } else {
-        console.error('Invalid response format:', result);
+        console.error('Invalid response format:', data);
       }
     } catch (error) {
       console.error('Failed to load connections:', error);
@@ -136,20 +184,54 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
   };
 
   const connectToDatabase = async (connection: MongoConnection) => {
-    const uri = connection.uri || generateUri(connection);
-    const isValid = await testConnection(uri);
-    
-    const updatedConnection = {
-      ...connection,
-      status: isValid ? 'connected' : 'error',
-      error: isValid ? undefined : 'Failed to connect'
-    };
+    try {
+      setConnections(prev => prev.map(conn => 
+        conn.id === connection.id 
+          ? { ...conn, status: 'connecting' } 
+          : conn
+      ));
 
-    setConnections(prev => prev.map((conn: { id: string; }) => 
-      conn.id === connection.id ? updatedConnection : conn
-    ));
+      const isConnected = await connectionService.connect(connection);
+      
+      const updatedConnection: MongoConnection = {
+        ...connection,
+        status: isConnected ? 'connected' : 'error',
+        error: isConnected ? undefined : 'Failed to connect'
+      };
 
-    if (isValid) onSelect(updatedConnection);
+      setConnections(prev => prev.map(conn => 
+        conn.id === connection.id ? updatedConnection : conn
+      ));
+
+      if (isConnected) {
+        onSelect(updatedConnection);
+      } else {
+        console.error('Failed to connect to database');
+      }
+    } catch (error) {
+      console.error('Connection error:', error);
+      setConnections(prev => prev.map(conn => 
+        conn.id === connection.id 
+          ? { ...conn, status: 'error', error: (error as Error).message } 
+          : conn
+      ));
+    }
+  };
+
+  const disconnectDatabase = async (connection: MongoConnection) => {
+    try {
+      await connectionService.disconnect(connection.id);
+      
+      setConnections(prev => prev.map(conn => 
+        conn.id === connection.id 
+          ? { ...conn, status: 'disconnected' } 
+          : conn
+      ));
+
+      onSelect(null);  // Updated to pass null
+    } catch (error) {
+      console.error('Disconnect error:', error);
+    }
   };
 
   const addConnection = async () => {
@@ -158,38 +240,56 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
       setNameError(nameValidationError);
       return;
     }
-
-    const connection = {
-      id: Date.now().toString(),
+  
+    // Create a new connection with a unique ID
+    const connection = createConnection({
       ...formData,
-      uri: formData.uri || generateUri(formData),
+      uri: formData.uri || (formData.host && formData.port ? generateUri(formData as MongoConnection) : ''),
       status: 'disconnected',
       options: { ...formData.options }
-    };
-
+    });
+  
     await saveConnection(connection);
-    setConnections(prev => [...prev, connection]);
-    setFormData({ ...formData, name: '', uri: '' });
+    
+    // Add the new connection to the state
+    setConnections((prev: MongoConnection[]) => [...prev, connection]);
+    setFormData(defaultConnection);
+    setDialogOpen(false);
   };
 
   const updateConnection = async () => {
+    if (!formData.id) {
+      console.error('Cannot update connection without id');
+      return;
+    }
+  
     const nameValidationError = validateName(formData.name, formData.id);
     if (nameValidationError) {
       setNameError(nameValidationError);
       return;
     }
-
+  
     try {
+      // Keep the existing ID when updating
+      const connection = createConnection({
+        ...formData,
+        id: formData.id // Ensure we keep the same ID
+      });
+  
       const response = await fetch('/api/stored-connections', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(connection)
       });
-
-      if (!response.ok) throw new Error('Failed to update connection');
-
+  
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(`Failed to update connection: ${data.error || response.statusText || 'Unknown error'}`);
+      }
+  
+      // Update the connection in state
       setConnections(prev => prev.map(conn => 
-        conn.id === formData.id ? formData : conn
+        conn.id === connection.id ? connection : conn
       ));
       setDialogOpen(false);
     } catch (error) {
@@ -199,7 +299,7 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
 
   const openDialog = (connection?: MongoConnection) => {
     if (connection) {
-      setFormData(connection);
+      setFormData(connection);  // Now includes id
       setIsUpdate(true);
     } else {
       setFormData(defaultConnection);
@@ -217,6 +317,40 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
       await addConnection();
     }
   };
+
+  const renderConnectionContextMenu = (conn: MongoConnection) => (
+    <ContextMenu.Portal>
+      <ContextMenu.Content className="min-w-[160px] bg-background rounded-md shadow-lg border p-1">
+        {conn.status === 'connected' ? (
+          <ContextMenu.Item 
+            className="px-2 py-1 rounded hover:bg-black/5 cursor-pointer"
+            onClick={() => disconnectDatabase(conn)}
+          >
+            Disconnect
+          </ContextMenu.Item>
+        ) : (
+          <ContextMenu.Item 
+            className="px-2 py-1 rounded hover:bg-black/5 cursor-pointer"
+            onClick={() => connectToDatabase(conn)}
+          >
+            Connect
+          </ContextMenu.Item>
+        )}
+        <ContextMenu.Item 
+          className="px-2 py-1 rounded hover:bg-black/5 cursor-pointer"
+          onClick={() => openDialog(conn)}
+        >
+          Edit
+        </ContextMenu.Item>
+        <ContextMenu.Item 
+          className="px-2 py-1 rounded hover:bg-black/5 cursor-pointer text-red-500"
+          onClick={() => deleteConnection(conn)}
+        >
+          Delete
+        </ContextMenu.Item>
+      </ContextMenu.Content>
+    </ContextMenu.Portal>
+  );
 
   return (
     <div className="border rounded-lg p-4">
@@ -442,8 +576,8 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
       </Dialog.Root>
 
       <div className="space-y-2">
-        {connections.map(conn => (
-          <ContextMenu.Root key={conn.id}>
+        {connections.map((conn) => (
+          <ContextMenu.Root key={`conn-${conn.id}`}>
             <ContextMenu.Trigger>
               <div className="p-2 border rounded hover:bg-black/5 flex items-center">
                 <span className="flex-1">{conn.name}</span>
@@ -455,29 +589,8 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
                 </span>
               </div>
             </ContextMenu.Trigger>
-            
-            <ContextMenu.Portal>
-              <ContextMenu.Content className="min-w-[160px] bg-background rounded-md shadow-lg border p-1">
-                <ContextMenu.Item 
-                  className="px-2 py-1 rounded hover:bg-black/5 cursor-pointer"
-                  onClick={() => connectToDatabase(conn)}
-                >
-                  Connect
-                </ContextMenu.Item>
-                <ContextMenu.Item 
-                  className="px-2 py-1 rounded hover:bg-black/5 cursor-pointer"
-                  onClick={() => openDialog(conn)}
-                >
-                  Edit
-                </ContextMenu.Item>
-                <ContextMenu.Item 
-                  className="px-2 py-1 rounded hover:bg-black/5 cursor-pointer text-red-500"
-                  onClick={() => deleteConnection(conn.id)}
-                >
-                  Delete
-                </ContextMenu.Item>
-              </ContextMenu.Content>
-            </ContextMenu.Portal>
+          
+            {renderConnectionContextMenu(conn)}
           </ContextMenu.Root>
         ))}
       </div>

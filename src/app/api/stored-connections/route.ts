@@ -1,153 +1,132 @@
-import { MongoClient } from 'mongodb';
 import { NextResponse } from 'next/server';
-import { MongoConnection } from '@/types/connection';
+import { ConnectionStore } from '../../../utils/ConnectionStore';
 
-const ADMIN_URI = "mongodb+srv://Cluster32312:bGB6T1l9XFVb@cluster32312.ww1bo.mongodb.net/mongodb_runner";
-const DB_NAME = 'mongodb_runner';
-const COLLECTION_NAME = 'connections';
 
-async function getMongoClient() {
-  return await MongoClient.connect(ADMIN_URI);
-}
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 
 export async function GET() {
-  let client;
-
   try {
-    client = await getMongoClient();
-    const db = client.db(DB_NAME);
-    
-    // Create collection if it doesn't exist
-    const collections = await db.listCollections({ name: COLLECTION_NAME }).toArray();
-    if (collections.length === 0) {
-      await db.createCollection(COLLECTION_NAME);
+    const response = await fetch(`${BACKEND_URL}/api/connections/list`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to fetch connections');
     }
 
-    const connections = await db.collection(COLLECTION_NAME)
-      .find({}, { projection: { _id: 0 } })
-      .toArray();
-
-    return NextResponse.json({ success: true, data: connections });
+    // Ensure we return an array of connections
+    return NextResponse.json(Array.isArray(data) ? data : []);
   } catch (error) {
     console.error('Failed to fetch connections:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch connections' },
-      { status: 500 }
-    );
-  } finally {
-    if (client) await client.close();
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
-  let client;
-
   try {
-    const connection = await request.json();
-    
-    // Basic validation
-    if (!connection.name || !connection.id) {
-      return NextResponse.json(
-        { success: false, error: 'Name and ID are required' },
-        { status: 400 }
-      );
+    const body = await request.json();
+    const response = await fetch(`${BACKEND_URL}/api/connections/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to save connection');
     }
 
-    client = await getMongoClient();
-    const db = client.db(DB_NAME);
-    
-    // Remove MongoDB internal fields and runtime state
-    const { _id, status, error, ...connectionToStore } = connection;
-    
-    await db.collection(COLLECTION_NAME).insertOne(connectionToStore);
-    
-    return NextResponse.json({ success: true });
+    return NextResponse.json(data);
   } catch (error) {
-    console.error('Failed to save connection:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to save connection' },
+      { error: (error as Error).message },
       { status: 500 }
     );
-  } finally {
-    if (client) await client.close();
-  }
-}
-
-export async function DELETE(request: Request) {
-  let client;
-
-  try {
-    const { id } = await request.json();
-    
-    if (!id) {
-      return NextResponse.json(
-        { success: false, error: 'Connection ID is required' },
-        { status: 400 }
-      );
-    }
-
-    client = await getMongoClient();
-    const db = client.db(DB_NAME);
-    
-    const result = await db.collection(COLLECTION_NAME).deleteOne({ id });
-    
-    if (result.deletedCount === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Connection not found' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Failed to delete connection:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete connection' },
-      { status: 500 }
-    );
-  } finally {
-    if (client) await client.close();
   }
 }
 
 export async function PUT(request: Request) {
-  let client;
   try {
     const connection = await request.json();
     
-    if (!connection.id) {
+    // Validate required fields
+    if (!connection.name) {
       return NextResponse.json(
-        { success: false, error: 'Connection ID is required' },
+        { error: 'Connection name is required' },
         { status: 400 }
       );
     }
 
-    client = await getMongoClient();
-    const db = client.db(DB_NAME);
-    
-    // Remove runtime fields before updating
-    const { _id, status, error, ...connectionToUpdate } = connection;
-    
-    const result = await db.collection(COLLECTION_NAME).updateOne(
-      { id: connection.id },
-      { $set: connectionToUpdate }
-    );
-
-    if (result.matchedCount === 0) {
+    // Get existing connection
+    const existing = await ConnectionStore.getConnection(connection.name);
+    if (!existing) {
       return NextResponse.json(
-        { success: false, error: 'Connection not found' },
+        { error: 'Connection not found' },
         { status: 404 }
       );
     }
 
+    // Update the connection
+    await ConnectionStore.saveConnection(
+      connection.name,
+      connection.uri || existing.uri,
+      {
+        host: connection.host || existing.config.host,
+        port: connection.port || existing.config.port,
+        database: connection.database || existing.config.database,
+        username: connection.username || existing.config.username,
+        password: connection.password || existing.config.password,
+        options: {
+          ...existing.config.options,
+          ...connection.options
+        }
+      }
+    );
+
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Failed to update connection:', error);
+    console.error('Update connection error:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to update connection' },
+      { error: (error as Error).message || 'Failed to update connection' },
       { status: 500 }
     );
-  } finally {
-    if (client) await client.close();
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { name: string } }
+) {
+  try {
+    const { name } = params;
+    
+    if (!name) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Connection name is required' 
+      }, { status: 400 });
+    }
+
+    console.log(`Attempting to delete connection: ${name}`);
+    
+    const success = await ConnectionStore.deleteConnection(name);
+    
+    if (!success) {
+      console.log(`Connection not found: ${name}`);
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Connection not found' 
+      }, { status: 404 });
+    }
+    
+    console.log(`Successfully deleted connection: ${name}`);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting connection:', error);
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete connection'
+    }, { status: 500 });
   }
 }
