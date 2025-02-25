@@ -367,18 +367,21 @@ export function ConnectionManager({ onSelect, connections, setConnections }: Con
       <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-black/50" />
-          <Dialog.Content 
-            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background p-6 rounded-lg w-[600px] max-h-[80vh] overflow-y-auto"
+          <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-background p-6 rounded-lg w-[600px] max-h-[80vh] overflow-y-auto"
+            aria-describedby="connection-description"
           >
-            <Dialog.Title className="text-lg font-bold mb-2">
-              {isUpdate ? 'Update Connection' : 'New Connection'}
-            </Dialog.Title>
-            
-            <Dialog.Description className="text-sm text-gray-500 mb-4">
-              {isUpdate 
-                ? 'Modify your MongoDB connection settings below.' 
-                : 'Configure your MongoDB connection settings below.'}
-            </Dialog.Description>
+          <Dialog.Title className="text-lg font-bold mb-2">
+            {isUpdate ? 'Update Connection' : 'New Connection'}
+          </Dialog.Title>
+          
+          <Dialog.Description 
+            id="connection-description"
+            className="text-sm text-gray-500 mb-4"
+          >
+            {isUpdate 
+              ? 'Modify your MongoDB connection settings below.' 
+              : 'Configure your MongoDB connection settings below.'}
+          </Dialog.Description>
 
             <form onSubmit={handleSubmit}>
               <div className="space-y-4 mb-6">

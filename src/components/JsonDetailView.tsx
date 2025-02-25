@@ -20,6 +20,9 @@ export function JsonDetailView({ data, open, onClose }: JsonDetailViewProps) {
               ✕
             </Dialog.Close>
           </div>
+          <Dialog.Description className="sr-only">
+            Detailed view of the selected database record in JSON format
+          </Dialog.Description>
           <pre className="bg-black/5 p-4 rounded overflow-auto max-h-[60vh] font-mono text-sm">
             {JSON.stringify(data, null, 2)}
           </pre>
